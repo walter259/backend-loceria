@@ -20,6 +20,7 @@ return new class extends Migration
             $table->string('password');
             $table->string('api_token', 80)->unique()->nullable();
             $table->boolean('is_active')->default(true);
+            $table->unsignedBigInteger('role_id'); 
             $table->rememberToken();
             $table->timestamps();
 
