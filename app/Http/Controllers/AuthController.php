@@ -7,6 +7,8 @@ use App\Models\User;
 use App\Models\Role;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Password;
+use Illuminate\Auth\Events\PasswordReset;
 
 class AuthController extends Controller
 {
@@ -33,7 +35,7 @@ class AuthController extends Controller
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => Hash::make($data['password']),
-                'role_id' => $userRole->id, // Usar el ID del rol "Usuario"
+                'role_id' => $userRole->id,
             ]);
 
             $token = $user->createToken('auth-token')->plainTextToken;
@@ -104,6 +106,89 @@ class AuthController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to logout',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function resetPassword(Request $request)
+    {
+        $data = $request->validate([
+            'email' => 'required|string|email',
+        ]);
+
+        // Enviar enlace de restablecimiento de contraseña usando el broker de Laravel
+        $status = Password::sendResetLink(
+            $request->only('email')
+        );
+
+        if ($status === Password::RESET_LINK_SENT) {
+            return response()->json([
+                'message' => 'Password reset link sent to your email.',
+            ]);
+        }
+
+        throw ValidationException::withMessages([
+            'email' => [trans($status)],
+        ]);
+    }
+
+    public function updatePassword(Request $request)
+    {
+        $data = $request->validate([
+            'token' => 'required|string',
+            'email' => 'required|string|email',
+            'password' => 'required|string|min:8|confirmed',
+        ]);
+
+        // Intentar restablecer la contraseña usando el broker de Laravel
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password),
+                ])->save();
+
+                event(new PasswordReset($user));
+            }
+        );
+
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json([
+                'message' => 'Password updated successfully.',
+            ]);
+        }
+
+        throw ValidationException::withMessages([
+            'email' => [trans($status)],
+        ]);
+    }
+
+    public function changePassword(Request $request)
+    {
+        $data = $request->validate([
+            'current_password' => 'required|string',
+            'new_password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $user = $request->user();
+
+        if (!Hash::check($data['current_password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => ['The current password is incorrect.'],
+            ]);
+        }
+
+        try {
+            $user->password = Hash::make($data['new_password']);
+            $user->save();
+
+            return response()->json([
+                'message' => 'Password changed successfully.',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to change password.',
                 'error' => $e->getMessage(),
             ], 500);
         }

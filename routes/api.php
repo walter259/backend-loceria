@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Route;
 // Rutas públicas
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
+Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
+Route::post('/auth/password/update', [AuthController::class, 'updatePassword']);
 
 // Rutas protegidas (todos los usuarios autenticados)
 Route::middleware('auth:sanctum')->group(function () {
@@ -42,8 +44,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/favorites/{id}', 'destroy');
     });
 
-    // Cerrar sesión (accesible para todos)
+    // Cerrar sesión y cambiar contraseña (accesible para todos los autenticados)
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+    Route::post('/auth/password/change', [AuthController::class, 'changePassword']);
 
     // Rutas para Moderadores y Admins (role_id: 2 o 3)
     Route::middleware('moderatorOrAdmin')->group(function () {
