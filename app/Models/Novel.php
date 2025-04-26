@@ -13,7 +13,8 @@ class Novel extends Model
         'title',
         'description',
         'user_id',
-        'category_id'
+        'category_id',
+        'image'
     ];
 
     public function user()

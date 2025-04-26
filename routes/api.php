@@ -15,7 +15,10 @@ Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
 Route::post('/auth/password/update', [AuthController::class, 'updatePassword']);
-
+// routes/api.php
+Route::get('/test-cloudinary-config', function () {
+    return config('cloudinary');
+});
 // Rutas protegidas (todos los usuarios autenticados)
 Route::middleware('auth:sanctum')->group(function () {
     // Rutas accesibles para todos los usuarios autenticados
