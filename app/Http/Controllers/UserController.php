@@ -141,4 +141,24 @@ class UserController extends Controller
             ], 500);
         }
     }
+    public function user(Request $request)
+    {
+        $user = $request->user(); // Obtiene el usuario autenticado
+        if ($user) {
+            $user->load('role'); // Carga la relación con el rol
+            return response()->json([
+                'user' => [
+                    'id' => $user->id,
+                    'user' => $user->user,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role_id' => $user->role_id,
+                    'role' => $user->role ? $user->role->name : null, // Coincide con tu interfaz 'role'
+                    'created_at' => $user->created_at,
+                    'updated_at' => $user->updated_at,
+                ]
+            ]);
+        }
+        return response()->json(['message' => 'User not found'], 404);
+    }
 }

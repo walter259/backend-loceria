@@ -89,6 +89,7 @@ class AuthController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'role_id' => $user->role_id,
+                'role' => $user->role ? $user->role->name : null,
             ],
             'token' => $token,
             'type' => 'Bearer',
@@ -193,4 +194,13 @@ class AuthController extends Controller
             ], 500);
         }
     }
+
+    public function showResetForm($token)
+{
+    return response()->json([
+        'token' => $token,
+        'email' => request()->input('email'),
+        'message' => 'Please enter your new password.',
+    ]);
+}
 }

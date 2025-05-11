@@ -7,6 +7,7 @@ use App\Http\Controllers\FavoriteController;
 use App\Http\Controllers\NovelController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\UserController;
+use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -15,29 +16,24 @@ Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
 Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
 Route::post('/auth/password/update', [AuthController::class, 'updatePassword']);
-// routes/api.php
+Route::get('/novels', [NovelController::class, 'show']);
+Route::get('/categories', [CategoryController::class, 'show']);
+
+// Ruta para probar configuración de Cloudinary
 Route::get('/test-cloudinary-config', function () {
     return config('cloudinary');
 });
+
 // Rutas protegidas (todos los usuarios autenticados)
 Route::middleware('auth:sanctum')->group(function () {
     // Rutas accesibles para todos los usuarios autenticados
-    Route::get('/user', function (Request $request) {
-        return $request->user();
-    });
-
-    // Ver contenido (accesible para todos)
-    Route::controller(NovelController::class)->group(function () {
-        Route::get('/novels', 'show');
+    Route::controller(UserController::class)->group(function () {
+        Route::get('/user', 'user'); // Prioridad a la versión personalizada
     });
 
     Route::controller(ChapterController::class)->group(function () {
         Route::get('/chapters/{novelId}', 'show');
         Route::get('/novels/{novelId}/chapters/{id}', 'showSingle');
-    });
-
-    Route::controller(CategoryController::class)->group(function () {
-        Route::get('/categories', 'show');
     });
 
     // Gestionar favoritos (accesible para todos)
