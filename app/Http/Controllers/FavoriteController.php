@@ -24,6 +24,7 @@ class FavoriteController extends Controller
                     //'user' => $favorite->user ? $favorite->user->name : null,
                     'novel_id' => $favorite->novel_id,
                     'novel' => $favorite->novel ? $favorite->novel->title : null,
+                    'image' => $favorite->novel ? $favorite->novel->image : null,
                     'created_at' => $favorite->created_at,
                     'updated_at' => $favorite->updated_at,
                 ];

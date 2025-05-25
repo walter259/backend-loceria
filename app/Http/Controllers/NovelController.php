@@ -184,4 +184,37 @@ class NovelController extends Controller
             ], 500);
         }
     }
+
+    public function showById($id)
+{
+    try {
+        $novel = Novel::with(['user', 'category'])->find($id);
+        
+        if (!$novel) {
+            return response()->json([
+                'message' => 'Novel not found'
+            ], 404);
+        }
+        
+        return response()->json([
+            'novel' => [
+                'id' => $novel->id,
+                'title' => $novel->title,
+                'description' => $novel->description,
+                'user_id' => $novel->user_id,
+                'author' => $novel->user ? $novel->user->name : null,
+                'category_id' => $novel->category_id,
+                'category' => $novel->category ? $novel->category->name : null,
+                'image' => $novel->image,
+                'created_at' => $novel->created_at,
+                'updated_at' => $novel->updated_at,
+            ]
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'error' => 'Error retrieving novel',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
 }
