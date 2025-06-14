@@ -37,9 +37,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
 
 
-    // Gestionar favoritos (accesible para todos)
+    // Gestionar favoritos
     Route::controller(FavoriteController::class)->group(function () {
-        Route::get('/favorites', 'show');
+        Route::get('/favorites', 'show');                           // Favoritos del usuario autenticado
+        Route::get('/users/{userId}/favorites', 'showByUserId');    // Favoritos de un usuario específico
         Route::post('/novels/{novelId}/favorites', 'store');
         Route::delete('/favorites/{id}', 'destroy');
     });

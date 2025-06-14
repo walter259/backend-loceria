@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Favorite;
 use App\Models\Novel;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 
 class FavoriteController extends Controller
@@ -21,7 +22,6 @@ class FavoriteController extends Controller
                 return [
                     'id' => $favorite->id,
                     'user_id' => $favorite->user_id,
-                    //'user' => $favorite->user ? $favorite->user->name : null,
                     'novel_id' => $favorite->novel_id,
                     'novel' => $favorite->novel ? $favorite->novel->title : null,
                     'image' => $favorite->novel ? $favorite->novel->image : null,
@@ -38,6 +38,45 @@ class FavoriteController extends Controller
 
         return response()->json([
             'message' => 'Favorites retrieved successfully',
+            'favorites' => $favorites
+        ]);
+    }
+
+    // Listar favoritos de un usuario específico por ID
+    public function showByUserId($userId)
+    {
+        // Verificar que el usuario existe
+        if (!User::find($userId)) {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
+        $favorites = Favorite::where('user_id', $userId)
+            ->with(['novel', 'user'])
+            ->get()
+            ->map(function ($favorite) {
+                return [
+                    'id' => $favorite->id,
+                    'user_id' => $favorite->user_id,
+                    'user' => $favorite->user ? $favorite->user->name : null,
+                    'novel_id' => $favorite->novel_id,
+                    'novel' => $favorite->novel ? $favorite->novel->title : null,
+                    'image' => $favorite->novel ? $favorite->novel->image : null,
+                    'created_at' => $favorite->created_at,
+                    'updated_at' => $favorite->updated_at,
+                ];
+            });
+
+        if ($favorites->isEmpty()) {
+            return response()->json([
+                'message' => 'No favorites found for this user'
+            ], 404);
+        }
+
+        return response()->json([
+            'message' => 'User favorites retrieved successfully',
+            'user_id' => $userId,
             'favorites' => $favorites
         ]);
     }
