@@ -12,20 +12,22 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // Rutas públicas
-Route::post('/auth/register', [AuthController::class, 'register']);
-Route::post('/auth/login', [AuthController::class, 'login']);
-Route::post('/auth/password/reset', [AuthController::class, 'resetPassword']);
-Route::post('/auth/password/update', [AuthController::class, 'updatePassword']);
-Route::get('/novels', [NovelController::class, 'show']);
-Route::get('/novels/{id}', [NovelController::class, 'showById']);
-Route::get('/categories', [CategoryController::class, 'show']);
+Route::cotroller(AuthController::class)->group(function () {
+    Route::post('/auth/register', 'register');
+    Route::post('/auth/login', 'login');
+    Route::post('/auth/password/reset', 'resetPassword');
+    Route::post('/auth/password/update', 'updatePassword');
+});
+
+Route::controller(NovelController::class)->group(function () {
+    Route::get('/novels', 'show');
+    Route::get('/novels/{id}', 'showById');
+    Route::get('/categories', 'show');
+});
+
 Route::controller(ChapterController::class)->group(function () {
     Route::get('/chapters/{novelId}', 'show');
     Route::get('/novels/{novelId}/chapters/{id}', 'showSingle');
-});
-// Ruta para probar configuración de Cloudinary
-Route::get('/test-cloudinary-config', function () {
-    return config('cloudinary');
 });
 
 // Rutas protegidas (todos los usuarios autenticados)
@@ -50,6 +52,39 @@ Route::middleware('auth:sanctum')->group(function () {
     // Rutas para Moderadores y Admins (role_id: 2 o 3)
     Route::middleware('moderatorOrAdmin')->group(function () {
         // Gestionar categorías
+
+
+        // Gestionar novelas (crear, actualizar, eliminar)
+        Route::controller(NovelController::class)->group(function () {
+            Route::post('/novels/create', 'store');
+        });
+
+        // Gestionar capítulos (crear, actualizar, eliminar)
+        Route::controller(ChapterController::class)->group(function () {
+            Route::post('/novels/{novelId}/chapters/create', 'store');
+        });
+    });
+
+    // Rutas solo para Admins (role_id: 3)
+    Route::middleware('admin')->group(function () {
+        // Gestionar usuarios
+        Route::controller(UserController::class)->group(function () {
+            Route::get('/users', 'show');
+            Route::post('/users/create', 'store');
+            Route::patch('/users/update/{id}', 'update');
+            Route::delete('/users/delete/{id}', 'destroy');
+        });
+
+        Route::controller(ChapterController::class)->group(function () {
+            Route::patch('/novels/{novelId}/chapters/update/{chapterNumber}', 'update');
+            Route::delete('/novels/{novelId}/chapters/delete/{chapterNumber}', 'destroy');
+        });
+
+        Route::controller(NovelController::class)->group(function () {
+            Route::post('/novels/update/{id}', 'update');
+            Route::delete('/novels/delete/{id}', 'destroy');
+        });
+
         Route::controller(CategoryController::class)->group(function () {
             Route::post('/categories/create', 'store');
             Route::patch('/categories/update/{id}', 'update');
@@ -62,31 +97,6 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/roles/create', 'store');
             Route::patch('/roles/update/{id}', 'update');
             Route::delete('/roles/delete/{id}', 'destroy');
-        });
-
-        // Gestionar novelas (crear, actualizar, eliminar)
-        Route::controller(NovelController::class)->group(function () {
-            Route::post('/novels/create', 'store');
-            Route::post('/novels/update/{id}', 'update');
-            Route::delete('/novels/delete/{id}', 'destroy');
-        });
-
-        // Gestionar capítulos (crear, actualizar, eliminar)
-        Route::controller(ChapterController::class)->group(function () {
-            Route::post('/novels/{novelId}/chapters/create', 'store');
-            Route::patch('/novels/{novelId}/chapters/update/{chapterNumber}', 'update');
-            Route::delete('/novels/{novelId}/chapters/delete/{chapterNumber}', 'destroy');
-        });
-    });
-
-    // Rutas solo para Admins (role_id: 3)
-    Route::middleware('admin')->group(function () {
-        // Gestionar usuarios
-        Route::controller(UserController::class)->group(function () {
-            Route::get('/users', 'show');
-            Route::post('/users/create', 'store');
-            Route::patch('/users/update/{id}', 'update');
-            Route::delete('/users/delete/{id}', 'destroy');
         });
     });
 });
