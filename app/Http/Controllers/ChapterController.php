@@ -126,7 +126,7 @@ class ChapterController extends Controller
     }
 
     // Actualizar un capítulo existente usando novel_id y chapter_number
-    public function update(Request $request, $novelId, $chapterNumber)
+    public function update(Request $request, $novelId, $chapterId)
     {
         // Validar que la novela exista
         if (!\App\Models\Novel::find($novelId)) {
@@ -141,15 +141,34 @@ class ChapterController extends Controller
             'chapter_number' => 'sometimes|integer|min:1',
         ]);
 
-        // Buscar el capítulo por novel_id y chapter_number
-        $chapter = Chapter::where('novel_id', $novelId)
-            ->where('chapter_number', $chapterNumber)
-            ->first();
+        // Buscar el capítulo por ID
+        $chapter = Chapter::find($chapterId);
 
         if (!$chapter) {
             return response()->json([
-                'message' => 'Chapter not found for this novel.',
+                'message' => 'Chapter not found',
             ], 404);
+        }
+
+        // Validar que el capítulo pertenece a la novela
+        if ($chapter->novel_id != $novelId) {
+            return response()->json([
+                'message' => 'Chapter does not belong to this novel',
+            ], 403);
+        }
+
+        // Si se está cambiando el chapter_number, validar que no exista otro capítulo con ese número
+        if (isset($data['chapter_number']) && $data['chapter_number'] != $chapter->chapter_number) {
+            $existingChapter = Chapter::where('novel_id', $novelId)
+                ->where('chapter_number', $data['chapter_number'])
+                ->where('id', '!=', $chapterId)
+                ->first();
+
+            if ($existingChapter) {
+                return response()->json([
+                    'message' => 'Another chapter with this number already exists for this novel.',
+                ], 422);
+            }
         }
 
         try {
@@ -157,7 +176,7 @@ class ChapterController extends Controller
         } catch (QueryException $e) {
             if ($e->getCode() === '23000') {
                 return response()->json([
-                    'message' => 'Another chapter with this number already exists for this novel.',
+                    'message' => 'Database constraint violation.',
                 ], 422);
             }
             throw $e;

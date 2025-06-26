@@ -81,17 +81,22 @@ class FavoriteController extends Controller
         ]);
     }
 
-    // Agregar una novela a favoritos
-    public function store(Request $request, $novelId)
+    // Agregar una novela a favoritos de un usuario específico
+    public function store(Request $request, $userId, $novelId)
     {
+        // Validar que el usuario existe
+        if (!User::find($userId)) {
+            return response()->json([
+                'message' => 'User not found'
+            ], 404);
+        }
+
         // Validar que la novela exista
         if (!Novel::find($novelId)) {
             return response()->json([
                 'message' => 'Novel not found'
             ], 404);
         }
-
-        $userId = Auth::id();
 
         // Verificar si ya existe el favorito
         $existingFavorite = Favorite::where('user_id', $userId)
@@ -100,7 +105,7 @@ class FavoriteController extends Controller
 
         if ($existingFavorite) {
             return response()->json([
-                'message' => 'This novel is already in your favorites'
+                'message' => 'This novel is already in user favorites'
             ], 409);
         }
 
@@ -109,39 +114,54 @@ class FavoriteController extends Controller
             'novel_id' => $novelId
         ]);
 
+        $novel = Novel::find($novelId);
+
         return response()->json([
-            'message' => 'Novel added to favorites',
+            'message' => 'Novel added to user favorites',
             'favorite' => [
                 'id' => $favorite->id,
                 'user_id' => $favorite->user_id,
                 'novel_id' => $favorite->novel_id,
+                'novel' => $novel ? $novel->title : null,
+                'image' => $novel ? $novel->image : null,
                 'created_at' => $favorite->created_at,
+                'updated_at' => $favorite->updated_at,
             ]
         ], 201);
     }
 
-    // Eliminar una novela de favoritos
-    public function destroy($id)
+    // Eliminar una novela de favoritos de un usuario específico
+    public function destroy($userId, $novelId)
     {
-        $favorite = Favorite::find($id);
-
-        if (!$favorite) {
+        // Verificar que el usuario existe
+        if (!User::find($userId)) {
             return response()->json([
-                'message' => 'Favorite not found'
+                'message' => 'User not found'
             ], 404);
         }
 
-        // Verificar que el favorito pertenece al usuario autenticado
-        if ($favorite->user_id != Auth::id()) {
+        // Verificar que la novela existe
+        if (!Novel::find($novelId)) {
             return response()->json([
-                'message' => 'Unauthorized to delete this favorite'
-            ], 403);
+                'message' => 'Novel not found'
+            ], 404);
+        }
+
+        // Buscar el favorito específico
+        $favorite = Favorite::where('user_id', $userId)
+            ->where('novel_id', $novelId)
+            ->first();
+
+        if (!$favorite) {
+            return response()->json([
+                'message' => 'Favorite not found for this user and novel'
+            ], 404);
         }
 
         $favorite->delete();
 
         return response()->json([
-            'message' => 'Novel removed from favorites'
+            'message' => 'Novel removed from user favorites'
         ]);
     }
 }

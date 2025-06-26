@@ -35,14 +35,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/user', 'user'); // Prioridad a la versión personalizada
     });
 
-
-
     // Gestionar favoritos
     Route::controller(FavoriteController::class)->group(function () {
-        Route::get('/favorites', 'show');                           // Favoritos del usuario autenticado
-        Route::get('/users/{userId}/favorites', 'showByUserId');    // Favoritos de un usuario específico
-        Route::post('/novels/{novelId}/favorites', 'store');
-        Route::delete('/favorites/{id}', 'destroy');
+        Route::get('/favorites', 'show');                                      // Favoritos del usuario autenticado
+        Route::get('/users/{userId}/favorites', 'showByUserId');               // Favoritos de un usuario específico
+        Route::post('/users/{userId}/novels/{novelId}/favorites', 'store');    // Agregar favorito por usuario y novela
+        Route::delete('/users/{userId}/novels/{novelId}/favorites', 'destroy'); // Eliminar favorito por usuario y novela
     });
 
     // Cerrar sesión y cambiar contraseña (accesible para todos los autenticados)
@@ -69,7 +67,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Gestionar novelas (crear, actualizar, eliminar)
         Route::controller(NovelController::class)->group(function () {
             Route::post('/novels/create', 'store');
-            Route::patch('/novels/update/{id}', 'update');
+            Route::post('/novels/update/{id}', 'update');
             Route::delete('/novels/delete/{id}', 'destroy');
         });
 
