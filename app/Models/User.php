@@ -17,12 +17,9 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'user',
         'name',
         'email',
         'password',
-        'is_active',
-        'role_id',
     ];
 
     /**
@@ -46,37 +43,6 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
-            'is_active' => 'boolean',
         ];
-    }
-
-    /**
-     * Get the role that the user belongs to.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
-     */
-    public function role()
-    {
-        return $this->belongsTo(Role::class);
-    }
-
-    /**
-     * Get the novels that belong to the user.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function novels()
-    {
-        return $this->hasMany(Novel::class);
-    }
-
-    /**
-     * Get the favorites that belong to the user.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
-     */
-    public function favorites()
-    {
-        return $this->hasMany(Favorite::class);
     }
 }

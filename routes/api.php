@@ -12,7 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // Rutas públicas
-Route::cotroller(AuthController::class)->group(function () {
+Route::controller(AuthController::class)->group(function () {
     Route::post('/auth/register', 'register');
     Route::post('/auth/login', 'login');
     Route::post('/auth/password/reset', 'resetPassword');
@@ -22,12 +22,15 @@ Route::cotroller(AuthController::class)->group(function () {
 Route::controller(NovelController::class)->group(function () {
     Route::get('/novels', 'show');
     Route::get('/novels/{id}', 'showById');
-    Route::get('/categories', 'show');
 });
 
 Route::controller(ChapterController::class)->group(function () {
     Route::get('/chapters/{novelId}', 'show');
     Route::get('/novels/{novelId}/chapters/{id}', 'showSingle');
+});
+
+Route::controller(CategoryController::class)->group(function () {
+    Route::get('/categories', 'show');
 });
 
 // Rutas protegidas (todos los usuarios autenticados)
