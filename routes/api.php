@@ -1,105 +1,69 @@
 <?php
 
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\CategoryController;
-use App\Http\Controllers\ChapterController;
-use App\Http\Controllers\FavoriteController;
-use App\Http\Controllers\NovelController;
-use App\Http\Controllers\RoleController;
-use App\Http\Controllers\UserController;
-use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\UserController;
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\SaleController;
 
-// Rutas públicas
+/*
+|--------------------------------------------------------------------------
+| API Routes
+|--------------------------------------------------------------------------
+|
+| Here is where you can register API routes for your application. These
+| routes are loaded by the RouteServiceProvider and all of them will
+| be assigned to the "api" middleware group. Make something great!
+|
+*/
+
+// Public routes (no authentication required)
 Route::controller(AuthController::class)->group(function () {
-    Route::post('/auth/register', 'register');
-    Route::post('/auth/login', 'login');
-    Route::post('/auth/password/reset', 'resetPassword');
-    Route::post('/auth/password/update', 'updatePassword');
+    Route::post('/login', 'login');                    // User login
+    Route::post('/register', 'register');              // User registration
+    Route::post('/forgot-password', 'resetPassword');  // Password reset request
+    Route::post('/update-password', 'updatePassword'); // Password reset confirmation
 });
 
-Route::controller(NovelController::class)->group(function () {
-    Route::get('/novels', 'show');
-    Route::get('/novels/{id}', 'showById');
-});
-
-Route::controller(ChapterController::class)->group(function () {
-    Route::get('/chapters/{novelId}', 'show');
-    Route::get('/novels/{novelId}/chapters/{id}', 'showSingle');
-});
-
-Route::controller(CategoryController::class)->group(function () {
-    Route::get('/categories', 'show');
-});
-
-// Rutas protegidas (todos los usuarios autenticados)
+// Protected routes (authentication required)
 Route::middleware('auth:sanctum')->group(function () {
-    // Rutas accesibles para todos los usuarios autenticados
+    
+    // Authentication routes
+    Route::controller(AuthController::class)->group(function () {
+        Route::post('/logout', 'logout');              // User logout
+        Route::post('/change-password', 'changePassword'); // Change password
+    });
+
+    // User management routes
     Route::controller(UserController::class)->group(function () {
-        Route::get('/user', 'user'); // Prioridad a la versión personalizada
+        Route::get('/users', 'show');                  // List all users
+        Route::post('/users', 'store');                // Create new user
+        Route::get('/users/{id}', 'showById');         // Get specific user
+        Route::put('/users/{id}', 'update');           // Update user
+        Route::delete('/users/{id}', 'destroy');       // Delete user
+        Route::get('/user', 'user');                   // Get authenticated user profile
     });
 
-    // Gestionar favoritos
-    Route::controller(FavoriteController::class)->group(function () {
-        Route::get('/favorites', 'show');                                      // Favoritos del usuario autenticado
-        Route::get('/users/{userId}/favorites', 'showByUserId');               // Favoritos de un usuario específico
-        Route::post('/users/{userId}/novels/{novelId}/favorites', 'store');    // Agregar favorito por usuario y novela
-        Route::delete('/users/{userId}/novels/{novelId}/favorites', 'destroy'); // Eliminar favorito por usuario y novela
+    // Product management routes
+    Route::controller(ProductController::class)->group(function () {
+        Route::get('/products', 'index');              // List all products
+        Route::post('/products', 'store');             // Create new product
+        Route::get('/products/{id}', 'showbyid');      // Get specific product
+        Route::put('/products/{id}', 'update');        // Update product
+        Route::delete('/products/{id}', 'destroy');    // Delete product
     });
 
-    // Cerrar sesión y cambiar contraseña (accesible para todos los autenticados)
-    Route::post('/auth/logout', [AuthController::class, 'logout']);
-    Route::post('/auth/password/change', [AuthController::class, 'changePassword']);
-
-    // Rutas para Moderadores y Admins (role_id: 2 o 3)
-    Route::middleware('moderatorOrAdmin')->group(function () {
-        // Gestionar categorías
-
-
-        // Gestionar novelas (crear, actualizar, eliminar)
-        Route::controller(NovelController::class)->group(function () {
-            Route::post('/novels/create', 'store');
-        });
-
-        // Gestionar capítulos (crear, actualizar, eliminar)
-        Route::controller(ChapterController::class)->group(function () {
-            Route::post('/novels/{novelId}/chapters/create', 'store');
-        });
+    // Sales management routes
+    Route::controller(SaleController::class)->group(function () {
+        Route::post('/sales', 'store');                // Register new sale
+        Route::get('/sales', 'history');               // Get sales history with filters
+        Route::get('/sales/{id}', 'show');             // Get specific sale details
+        Route::delete('/sales/{id}', 'destroy');       // Delete sale
     });
 
-    // Rutas solo para Admins (role_id: 3)
-    Route::middleware('admin')->group(function () {
-        // Gestionar usuarios
-        Route::controller(UserController::class)->group(function () {
-            Route::get('/users', 'show');
-            Route::post('/users/create', 'store');
-            Route::patch('/users/update/{id}', 'update');
-            Route::delete('/users/delete/{id}', 'destroy');
-        });
-
-        Route::controller(ChapterController::class)->group(function () {
-            Route::patch('/novels/{novelId}/chapters/update/{chapterNumber}', 'update');
-            Route::delete('/novels/{novelId}/chapters/delete/{chapterNumber}', 'destroy');
-        });
-
-        Route::controller(NovelController::class)->group(function () {
-            Route::post('/novels/update/{id}', 'update');
-            Route::delete('/novels/delete/{id}', 'destroy');
-        });
-
-        Route::controller(CategoryController::class)->group(function () {
-            Route::post('/categories/create', 'store');
-            Route::patch('/categories/update/{id}', 'update');
-            Route::delete('/categories/delete/{id}', 'destroy');
-        });
-
-        // Gestionar roles
-        Route::controller(RoleController::class)->group(function () {
-            Route::get('/roles', 'show');
-            Route::post('/roles/create', 'store');
-            Route::patch('/roles/update/{id}', 'update');
-            Route::delete('/roles/delete/{id}', 'destroy');
-        });
+    // Test route for authenticated users
+    Route::get('/user', function (Request $request) {
+        return $request->user();
     });
 });

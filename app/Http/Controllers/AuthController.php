@@ -14,16 +14,8 @@ class AuthController extends Controller
 {
     public function register(Request $request)
     {
-        // Asegurarse de que el rol "Usuario" exista
-        $userRole = Role::where('name', 'Usuario')->first();
-        if (!$userRole) {
-            return response()->json([
-                'message' => 'Role "Usuario" not found. Please ensure roles are seeded.'
-            ], 500);
-        }
 
         $data = $request->validate([
-            'user' => 'required|string|max:255|unique:users,user',
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
@@ -31,11 +23,11 @@ class AuthController extends Controller
 
         try {
             $user = User::create([
-                'user' => $data['user'],
+
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => Hash::make($data['password']),
-                'role_id' => $userRole->id,
+
             ]);
 
             $token = $user->createToken('auth-token')->plainTextToken;
@@ -44,10 +36,10 @@ class AuthController extends Controller
                 'message' => 'User registered successfully',
                 'user' => [
                     'id' => $user->id,
-                    'user' => $user->user,
+
                     'name' => $user->name,
                     'email' => $user->email,
-                    'role_id' => $user->role_id,
+
                 ],
                 'token' => $token,
                 'type' => 'Bearer',
@@ -63,19 +55,15 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $data = $request->validate([
-            'email' => 'required_without:user|string|email',
-            'user' => 'required_without:email|string',
+            'email' => 'required|string|email',
             'password' => 'required|string',
         ]);
 
-        $user = User::where('email', $data['email'] ?? null)
-                    ->orWhere('user', $data['user'] ?? null)
-                    ->first();
+        $user = User::where('email', $data['email'])->first();
 
         if (!$user || !Hash::check($data['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
-                'user' => ['The provided credentials are incorrect.'],
             ]);
         }
 
@@ -85,11 +73,8 @@ class AuthController extends Controller
             'message' => 'Login successful',
             'user' => [
                 'id' => $user->id,
-                'user' => $user->user,
                 'name' => $user->name,
                 'email' => $user->email,
-                'role_id' => $user->role_id,
-                'role' => $user->role ? $user->role->name : null,
             ],
             'token' => $token,
             'type' => 'Bearer',
@@ -195,12 +180,4 @@ class AuthController extends Controller
         }
     }
 
-    public function showResetForm($token)
-{
-    return response()->json([
-        'token' => $token,
-        'email' => request()->input('email'),
-        'message' => 'Please enter your new password.',
-    ]);
-}
 }
