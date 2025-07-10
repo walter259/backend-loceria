@@ -81,6 +81,14 @@ class Sale extends Model
     }
 
     /**
+     * Scope to filter sales for a specific user (multi-tenant).
+     */
+    public function scopeForUser($query, $userId)
+    {
+        return $query->where('user_id', $userId);
+    }
+
+    /**
      * Scope to filter sales by product.
      */
     public function scopeByProduct($query, $productId)

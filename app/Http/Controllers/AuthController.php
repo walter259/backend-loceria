@@ -15,6 +15,14 @@ class AuthController extends Controller
     public function register(Request $request)
     {
 
+        // Asegurarse de que el rol "Usuario" exista
+        $userRole = Role::where('name', 'Usuario')->first();
+        if (!$userRole) {
+            return response()->json([
+                'message' => 'Role "Usuario" not found. Please ensure roles are seeded.'
+            ], 500);
+        }
+
         $data = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
@@ -27,7 +35,7 @@ class AuthController extends Controller
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => Hash::make($data['password']),
-
+                'role_id' => $userRole->id,
             ]);
 
             $token = $user->createToken('auth-token')->plainTextToken;
@@ -36,7 +44,7 @@ class AuthController extends Controller
                 'message' => 'User registered successfully',
                 'user' => [
                     'id' => $user->id,
-
+                    'role_id' => $user->role_id,
                     'name' => $user->name,
                     'email' => $user->email,
 
@@ -179,5 +187,4 @@ class AuthController extends Controller
             ], 500);
         }
     }
-
 }

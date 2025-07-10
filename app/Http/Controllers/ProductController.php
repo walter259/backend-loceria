@@ -23,6 +23,7 @@ class ProductController extends Controller
             // Validate the request data
             $data = $request->validate([
                 'name' => 'required|string|max:255',
+                'brand' => 'required|string|max:255',
                 'price' => 'required|numeric|min:0',
                 'unit_cost' => 'nullable|numeric|min:0',
                 'bulk_cost' => 'nullable|numeric|min:0',
@@ -30,7 +31,7 @@ class ProductController extends Controller
 
             // Get the authenticated user
             $user = $request->user();
-            
+
             // Check authorization
             $this->authorize('create', Product::class);
 
@@ -48,6 +49,7 @@ class ProductController extends Controller
                 'product' => [
                     'id' => $product->id,
                     'name' => $product->name,
+                    'brand' => $product->brand,
                     'price' => $product->price,
                     'unit_cost' => $product->unit_cost,
                     'bulk_cost' => $product->bulk_cost,
@@ -56,7 +58,6 @@ class ProductController extends Controller
                     'updated_at' => $product->updated_at,
                 ],
             ], 201);
-
         } catch (ValidationException $e) {
             return response()->json([
                 'message' => 'Validation failed',
@@ -84,6 +85,7 @@ class ProductController extends Controller
             // Validate the request data
             $data = $request->validate([
                 'name' => 'sometimes|string|max:255',
+                'brand' => 'sometimes|string|max:255',
                 'price' => 'sometimes|numeric|min:0',
                 'unit_cost' => 'nullable|numeric|min:0',
                 'bulk_cost' => 'nullable|numeric|min:0',
@@ -91,7 +93,7 @@ class ProductController extends Controller
 
             // Find the product and check if it belongs to the authenticated user
             $product = Product::where('user_id', $request->user()->id)
-                            ->findOrFail($id);
+                ->findOrFail($id);
 
             // Check authorization
             $this->authorize('update', $product);
@@ -107,6 +109,7 @@ class ProductController extends Controller
                 'product' => [
                     'id' => $product->id,
                     'name' => $product->name,
+                    'brand' => $product->brand,
                     'price' => $product->price,
                     'unit_cost' => $product->unit_cost,
                     'bulk_cost' => $product->bulk_cost,
@@ -115,7 +118,6 @@ class ProductController extends Controller
                     'updated_at' => $product->updated_at,
                 ],
             ]);
-
         } catch (ValidationException $e) {
             return response()->json([
                 'message' => 'Validation failed',
@@ -146,7 +148,7 @@ class ProductController extends Controller
         try {
             // Find the product and check if it belongs to the authenticated user
             $product = Product::where('user_id', $request->user()->id)
-                            ->findOrFail($id);
+                ->findOrFail($id);
 
             // Check authorization
             $this->authorize('delete', $product);
@@ -157,7 +159,6 @@ class ProductController extends Controller
             return response()->json([
                 'message' => 'Product deleted successfully',
             ]);
-
         } catch (ModelNotFoundException $e) {
             return response()->json([
                 'message' => 'Product not found or you do not have permission to access it',
@@ -183,7 +184,7 @@ class ProductController extends Controller
         try {
             // Find the product and check if it belongs to the authenticated user
             $product = Product::where('user_id', $request->user()->id)
-                            ->findOrFail($id);
+                ->findOrFail($id);
 
             // Check authorization
             $this->authorize('view', $product);
@@ -195,6 +196,7 @@ class ProductController extends Controller
                 'product' => [
                     'id' => $product->id,
                     'name' => $product->name,
+                    'brand' => $product->brand,
                     'price' => $product->price,
                     'unit_cost' => $product->unit_cost,
                     'bulk_cost' => $product->bulk_cost,
@@ -203,7 +205,6 @@ class ProductController extends Controller
                     'updated_at' => $product->updated_at,
                 ],
             ]);
-
         } catch (ModelNotFoundException $e) {
             return response()->json([
                 'message' => 'Product not found or you do not have permission to access it',
@@ -232,28 +233,28 @@ class ProductController extends Controller
 
             // Get all products for the authenticated user using the scope
             $products = Product::forUser($request->user()->id)
-                            ->with('user')
-                            ->orderBy('created_at', 'desc')
-                            ->get()
-                            ->map(function ($product) {
-                                return [
-                                    'id' => $product->id,
-                                    'name' => $product->name,
-                                    'price' => $product->price,
-                                    'unit_cost' => $product->unit_cost,
-                                    'bulk_cost' => $product->bulk_cost,
-                                    'user_id' => $product->user_id,
-                                    'created_at' => $product->created_at,
-                                    'updated_at' => $product->updated_at,
-                                ];
-                            });
+                ->with('user')
+                ->orderBy('created_at', 'desc')
+                ->get()
+                ->map(function ($product) {
+                    return [
+                        'id' => $product->id,
+                        'name' => $product->name,
+                        'brand' => $product->brand,
+                        'price' => $product->price,
+                        'unit_cost' => $product->unit_cost,
+                        'bulk_cost' => $product->bulk_cost,
+                        'user_id' => $product->user_id,
+                        'created_at' => $product->created_at,
+                        'updated_at' => $product->updated_at,
+                    ];
+                });
 
             return response()->json([
                 'message' => 'Products retrieved successfully',
                 'products' => $products,
                 'count' => $products->count(),
             ]);
-
         } catch (AuthorizationException $e) {
             return response()->json([
                 'message' => 'Unauthorized to view products',

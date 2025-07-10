@@ -21,8 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
             'auth:sanctum' => \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class, // Si usas Sanctum
-            'admin' => \App\Http\Middleware\CheckAdminRole::class,
-            'moderatorOrAdmin' => \App\Http\Middleware\CheckModeratorOrAdmin::class,
+            'isAdmin' => \App\Http\Middleware\IsAdmin::class,
         ]);
 
         // Opcional: Si quieres añadir middlewares globales o de grupo
