@@ -37,17 +37,17 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // User management routes
     Route::controller(UserController::class)->group(function () {
-        Route::get('/users', 'show');                  // List all users
-        Route::post('/users', 'store');                // Create new user
-        Route::get('/users/{id}', 'showById');         // Get specific user
-        Route::put('/users/{id}', 'update');           // Update user
-        Route::delete('/users/{id}', 'destroy');       // Delete user
+    //     Route::get('/users', 'show');                  // List all users
+    //     Route::post('/users', 'store');                // Create new user
+    //     Route::get('/users/{id}', 'showById');         // Get specific user
+    //     Route::put('/users/{id}', 'update');           // Update user
+    //     Route::delete('/users/{id}', 'destroy');       // Delete user
         Route::get('/user', 'user');                   // Get authenticated user profile
     });
 
     // Product management routes
     Route::controller(ProductController::class)->group(function () {
-        Route::get('/products', 'index');              // List all products
+        Route::get('/products', 'show');               // List all products for authenticated user
         Route::post('/products', 'store');             // Create new product
         Route::get('/products/{id}', 'showbyid');      // Get specific product
         Route::put('/products/{id}', 'update');        // Update product
