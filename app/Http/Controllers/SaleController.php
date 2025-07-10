@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class SaleController extends Controller
 {
@@ -132,33 +133,56 @@ class SaleController extends Controller
     }
 
     /**
-     * Show sales history for the authenticated user.
+     * Show sales history for the authenticated user with performance optimizations.
      */
     public function history(Request $request): JsonResponse
     {
+        $start = microtime(true); // Performance monitoring
         try {
-            // Check authorization
             $this->authorize('viewAny', Sale::class);
 
-            $user = $request->user();
+            $userId = $request->user()->id;
+            $startDate = $request->input('start_date');
+            $endDate = $request->input('end_date');
+            $productId = $request->input('product_id');
+            $perPage = (int) $request->input('per_page', 15);
+            $cursor = $request->input('cursor', null);
+            $useCursor = $request->boolean('cursor', true); // allow fallback to offset
 
-            // Build query for user's sales only
-            $query = Sale::forUser($user->id)
-                ->with(['product:id,name,price,unit_cost', 'user:id,name']);
+            // Build cache key
+            $cacheKey = "sales:{$userId}:{$startDate}:{$endDate}:{$productId}:{$cursor}:{$perPage}:{$useCursor}";
+            $ttl = 60; // seconds
 
-            // Apply date filters if provided
-            if ($request->filled('start_date') && $request->filled('end_date')) {
-                $query->withinDateRange($request->start_date, $request->end_date);
-            } elseif ($request->filled('start_date')) {
-                $query->where('created_at', '>=', $request->start_date);
-            } elseif ($request->filled('end_date')) {
-                $query->where('created_at', '<=', $request->end_date);
-            }
+            $sales = cache()->remember($cacheKey, $ttl, function () use ($userId, $startDate, $endDate, $productId, $perPage, $cursor, $useCursor) {
+                $query = Sale::query()
+                    ->select(['id', 'user_id', 'product_id', 'quantity', 'unit_price', 'total', 'utility', 'created_at', 'updated_at'])
+                    ->with(['product:id,name,price,unit_cost', 'user:id,name'])
+                    ->where('user_id', $userId)
+                    ->orderByDesc('created_at');
 
-            // Apply pagination for better performance
-            $perPage = $request->get('per_page', 15);
-            $sales = $query->orderBy('created_at', 'desc')
-                ->paginate($perPage);
+                // Date range filter
+                if ($startDate && $endDate) {
+                    $query->whereBetween('created_at', [$startDate, $endDate]);
+                } elseif ($startDate) {
+                    $query->where('created_at', '>=', $startDate);
+                } elseif ($endDate) {
+                    $query->where('created_at', '<=', $endDate);
+                }
+                // Product filter
+                if ($productId) {
+                    $query->where('product_id', $productId);
+                }
+
+                // Cursor-based pagination (default), fallback to offset if requested
+                if ($useCursor) {
+                    return $query->cursorPaginate($perPage, ['*'], 'cursor', $cursor);
+                } else {
+                    return $query->paginate($perPage);
+                }
+            });
+
+            $duration = microtime(true) - $start;
+            Log::info('SaleController@history duration', ['duration_ms' => $duration * 1000]);
 
             // Transform the data efficiently
             $sales->getCollection()->transform(function ($sale) {
@@ -174,16 +198,27 @@ class SaleController extends Controller
                 ];
             });
 
-            return response()->json([
+            // Prepare response (compatible with both cursor and offset pagination)
+            $response = [
                 'message' => 'Sales history retrieved successfully',
                 'sales' => $sales->items(),
-                'pagination' => [
+                'count' => $sales->count(),
+                'cached' => true,
+                'performance_ms' => round($duration * 1000, 2),
+            ];
+            if (method_exists($sales, 'nextCursor')) {
+                $response['next_cursor'] = $sales->nextCursor()?->encode();
+                $response['prev_cursor'] = $sales->previousCursor()?->encode();
+                $response['has_more'] = $sales->hasMorePages();
+            } else {
+                $response['pagination'] = [
                     'current_page' => $sales->currentPage(),
                     'last_page' => $sales->lastPage(),
                     'per_page' => $sales->perPage(),
                     'total' => $sales->total(),
-                ],
-            ]);
+                ];
+            }
+            return response()->json($response);
         } catch (AuthorizationException $e) {
             return response()->json([
                 'message' => 'Unauthorized to view sales history',

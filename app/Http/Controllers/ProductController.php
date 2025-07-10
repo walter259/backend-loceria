@@ -9,6 +9,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\Log;
 
 class ProductController extends Controller
 {
@@ -223,38 +224,73 @@ class ProductController extends Controller
     }
 
     /**
-     * Show all products belonging to the authenticated user.
+     * Show all products belonging to the authenticated user with performance optimizations.
      */
     public function show(Request $request): JsonResponse
     {
+        $start = microtime(true); // Performance monitoring
         try {
-            // Check authorization
             $this->authorize('viewAny', Product::class);
 
-            // Get all products for the authenticated user using the scope
-            $products = Product::forUser($request->user()->id)
-                ->with('user')
-                ->orderBy('created_at', 'desc')
-                ->get()
-                ->map(function ($product) {
-                    return [
-                        'id' => $product->id,
-                        'name' => $product->name,
-                        'brand' => $product->brand,
-                        'price' => $product->price,
-                        'unit_cost' => $product->unit_cost,
-                        'bulk_cost' => $product->bulk_cost,
-                        'user_id' => $product->user_id,
-                        'created_at' => $product->created_at,
-                        'updated_at' => $product->updated_at,
-                    ];
-                });
+            $userId = $request->user()->id;
+            $search = $request->input('search', '');
+            $brand = $request->input('brand', null);
+            $perPage = (int) $request->input('per_page', 15);
+            $cursor = $request->input('cursor', null);
+            $useCursor = $request->boolean('cursor', true); // allow fallback to offset
 
-            return response()->json([
+            // Build cache key
+            $cacheKey = "products:{$userId}:{$search}:{$brand}:{$cursor}:{$perPage}:{$useCursor}";
+            $ttl = 60; // seconds
+
+            $products = cache()->remember($cacheKey, $ttl, function () use ($userId, $search, $brand, $perPage, $cursor, $useCursor) {
+                $query = Product::query()
+                    ->select(['id', 'name', 'brand', 'price', 'unit_cost', 'bulk_cost', 'user_id', 'created_at', 'updated_at'])
+                    ->with('user:id,name')
+                    ->where('user_id', $userId)
+                    ->orderByDesc('created_at');
+
+                // Full-text search
+                if ($search) {
+                    $query->whereFullText(['name', 'brand'], $search);
+                }
+                // Filter by brand
+                if ($brand) {
+                    $query->where('brand', $brand);
+                }
+
+                // Cursor-based pagination (default), fallback to offset if requested
+                if ($useCursor) {
+                    return $query->cursorPaginate($perPage, ['*'], 'cursor', $cursor);
+                } else {
+                    return $query->paginate($perPage);
+                }
+            });
+
+            $duration = microtime(true) - $start;
+            Log::info('ProductController@show duration', ['duration_ms' => $duration * 1000]);
+
+            // Prepare response (compatible with both cursor and offset pagination)
+            $response = [
                 'message' => 'Products retrieved successfully',
-                'products' => $products,
+                'products' => $products->items(),
                 'count' => $products->count(),
-            ]);
+                'cached' => true,
+                'performance_ms' => round($duration * 1000, 2),
+            ];
+            if (method_exists($products, 'nextCursor')) {
+                $response['next_cursor'] = $products->nextCursor()?->encode();
+                $response['prev_cursor'] = $products->previousCursor()?->encode();
+                $response['has_more'] = $products->hasMorePages();
+            } else {
+                $response['pagination'] = [
+                    'current_page' => $products->currentPage(),
+                    'last_page' => $products->lastPage(),
+                    'per_page' => $products->perPage(),
+                    'total' => $products->total(),
+                ];
+            }
+            return response()->json($response);
         } catch (AuthorizationException $e) {
             return response()->json([
                 'message' => 'Unauthorized to view products',
