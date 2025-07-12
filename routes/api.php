@@ -28,7 +28,7 @@ Route::controller(AuthController::class)->group(function () {
 
 // Admin-only routes (authentication + admin role required)
 Route::middleware(['auth:sanctum', 'isAdmin'])->group(function () {
-    
+
     // User management routes - Admin only
     Route::controller(UserController::class)->group(function () {
         Route::get('/users', 'show');                  // List all users
@@ -40,7 +40,7 @@ Route::middleware(['auth:sanctum', 'isAdmin'])->group(function () {
 
 // Protected routes (authentication required for all users)
 Route::middleware('auth:sanctum')->group(function () {
-    
+
     // Authentication routes
     Route::controller(AuthController::class)->group(function () {
         Route::post('/logout', 'logout');              // User logout
@@ -57,16 +57,17 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/products', 'show');               // List all products for authenticated user
         Route::post('/products/store', 'store');             // Create new product
         Route::get('/products/{id}', 'showbyid');      // Get specific product
-        Route::put('/products/{id}', 'update');        // Update product
-        Route::delete('/products/{id}', 'destroy');    // Delete product
+        Route::put('/products/update/{id}', 'update');        // Update product
+        Route::delete('/products/delete/{id}', 'destroy');    // Delete product
     });
 
     // Sales management routes (multi-tenant)
     Route::controller(SaleController::class)->group(function () {
-        Route::post('/sales', 'store');                // Register new sale
+        Route::post('/sales/store', 'store');                // Register new sale
         Route::get('/sales', 'history');               // Get sales history with filters
-        Route::get('/sales/{id}', 'show');             // Get specific sale details
-        Route::delete('/sales/{id}', 'destroy');       // Delete sale
+        Route::get('/sales/{id}', 'show');     // Get specific sale details
+        Route::put('/sales/update/{id}', 'update');        // Update sale
+        Route::delete('/sales/delete/{id}', 'destroy');       // Delete sale
     });
 });
 

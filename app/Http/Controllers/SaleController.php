@@ -312,4 +312,44 @@ class SaleController extends Controller
             ], 500);
         }
     }
+
+    public function update(Request $request, $id): JsonResponse
+{
+    try {
+        // Validar datos de entrada
+        $data = $request->validate([
+            'quantity' => 'required|integer|min:1',
+            // otros campos que permitas actualizar
+        ]);
+
+        // Encontrar la venta del usuario autenticado
+        $sale = Sale::forUser($request->user()->id)->findOrFail($id);
+        
+        // Verificar autorización
+        $this->authorize('update', $sale);
+
+        // Actualizar la venta
+        $sale->update($data);
+        
+        return response()->json([
+            'message' => 'Sale updated successfully',
+            'sale' => $sale
+        ]);
+        
+    } catch (ModelNotFoundException $e) {
+        return response()->json([
+            'message' => 'Sale not found or you do not have permission to access it',
+        ], 404);
+    } catch (AuthorizationException $e) {
+        return response()->json([
+            'message' => 'Unauthorized to update this sale',
+            'error' => $e->getMessage(),
+        ], 403);
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Failed to update sale',
+            'error' => $e->getMessage(),
+        ], 500);
+    }
+}
 }
