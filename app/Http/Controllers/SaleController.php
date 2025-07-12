@@ -134,6 +134,7 @@ class SaleController extends Controller
 
     /**
      * Show sales history for the authenticated user with performance optimizations.
+     * Groups sales by transaction instead of showing individual product sales.
      */
     public function history(Request $request): JsonResponse
     {
@@ -150,10 +151,11 @@ class SaleController extends Controller
             $useCursor = $request->boolean('cursor', true); // allow fallback to offset
 
             // Build cache key
-            $cacheKey = "sales:{$userId}:{$startDate}:{$endDate}:{$productId}:{$cursor}:{$perPage}:{$useCursor}";
+            $cacheKey = "sales_transactions:{$userId}:{$startDate}:{$endDate}:{$productId}:{$cursor}:{$perPage}:{$useCursor}";
             $ttl = 60; // seconds
 
-            $sales = cache()->remember($cacheKey, $ttl, function () use ($userId, $startDate, $endDate, $productId, $perPage, $cursor, $useCursor) {
+            $transactions = cache()->remember($cacheKey, $ttl, function () use ($userId, $startDate, $endDate, $productId, $perPage, $cursor, $useCursor, $request) {
+                // First, get all sales with their relationships
                 $query = Sale::query()
                     ->select(['id', 'user_id', 'product_id', 'quantity', 'unit_price', 'total', 'utility', 'created_at', 'updated_at'])
                     ->with(['product:id,name,price,unit_cost', 'user:id,name'])
@@ -173,60 +175,117 @@ class SaleController extends Controller
                     $query->where('product_id', $productId);
                 }
 
-                // Cursor-based pagination (default), fallback to offset if requested
-                if ($useCursor) {
-                    return $query->cursorPaginate($perPage, ['*'], 'cursor', $cursor);
-                } else {
-                    return $query->paginate($perPage);
+                // Get all sales for grouping
+                $allSales = $query->get();
+
+                // Group sales by transaction (same user_id and created_at timestamp)
+                $groupedSales = $allSales->groupBy(function ($sale) {
+                    // Group by user_id and created_at (rounded to seconds for transaction grouping)
+                    return $sale->user_id . '_' . $sale->created_at->format('Y-m-d H:i:s');
+                });
+
+                // Transform grouped sales into transactions
+                $transactions = $groupedSales->map(function ($sales, $groupKey) {
+                    $firstSale = $sales->first();
+                    
+                    // Calculate transaction totals
+                    $totalAmount = $sales->sum('total');
+                    $totalUtility = $sales->sum('utility');
+                    $totalItems = $sales->sum('quantity');
+                    
+                    // Prepare products list for this transaction
+                    $products = $sales->map(function ($sale) {
+                        return [
+                            'product_name' => $sale->product?->name ?? 'Producto no encontrado',
+                            'quantity' => $sale->quantity,
+                            'unit_price' => $sale->unit_price,
+                            'total' => $sale->total,
+                            'utility' => $sale->utility,
+                        ];
+                    })->values();
+
+                    return [
+                        'transaction_id' => $firstSale->id, // Use first sale ID as transaction ID
+                        'transaction_date' => $firstSale->created_at,
+                        'total_amount' => $totalAmount,
+                        'total_utility' => $totalUtility,
+                        'total_items' => $totalItems,
+                        'products_count' => $sales->count(), // Number of different products
+                        'products' => $products,
+                        'user_name' => $firstSale->user?->name ?? 'Usuario no encontrado',
+                    ];
+                })->values();
+
+                // Sort transactions by date (newest first)
+                $transactions = $transactions->sortByDesc('transaction_date')->values();
+
+                // Apply pagination to the grouped transactions
+                $totalTransactions = $transactions->count();
+                $offset = 0;
+                
+                if ($cursor && $useCursor) {
+                    // Simple cursor implementation for grouped data
+                    $cursorData = json_decode(base64_decode($cursor), true);
+                    $offset = $cursorData['offset'] ?? 0;
+                } elseif (!$useCursor) {
+                    $page = $request->input('page', 1);
+                    $offset = ($page - 1) * $perPage;
                 }
+
+                $paginatedTransactions = $transactions->slice($offset, $perPage);
+                
+                // Create a custom paginator-like object
+                $hasMore = ($offset + $perPage) < $totalTransactions;
+                $nextCursor = $hasMore ? base64_encode(json_encode(['offset' => $offset + $perPage])) : null;
+                $prevCursor = $offset > 0 ? base64_encode(json_encode(['offset' => max(0, $offset - $perPage)])) : null;
+
+                return (object) [
+                    'items' => $paginatedTransactions,
+                    'count' => $paginatedTransactions->count(),
+                    'total' => $totalTransactions,
+                    'has_more' => $hasMore,
+                    'next_cursor' => $nextCursor,
+                    'prev_cursor' => $prevCursor,
+                    'current_page' => $useCursor ? null : ($offset / $perPage) + 1,
+                    'last_page' => $useCursor ? null : ceil($totalTransactions / $perPage),
+                    'per_page' => $perPage,
+                ];
             });
 
             $duration = microtime(true) - $start;
             Log::info('SaleController@history duration', ['duration_ms' => $duration * 1000]);
 
-            // Transform the data efficiently
-            $sales->getCollection()->transform(function ($sale) {
-                return [
-                    'id' => $sale->id,
-                    'user' => $sale->user?->name,
-                    'product' => $sale->product?->name,
-                    'quantity' => $sale->quantity,
-                    'unit_price' => $sale->unit_price,
-                    'total' => $sale->total,
-                    'utility' => $sale->utility,
-                    'created_at' => $sale->created_at,
-                ];
-            });
-
             // Prepare response (compatible with both cursor and offset pagination)
             $response = [
-                'message' => 'Sales history retrieved successfully',
-                'sales' => $sales->items(),
-                'count' => $sales->count(),
+                'message' => 'Historial de transacciones recuperado exitosamente',
+                'transactions' => $transactions->items,
+                'count' => $transactions->count,
                 'cached' => true,
                 'performance_ms' => round($duration * 1000, 2),
             ];
-            if (method_exists($sales, 'nextCursor')) {
-                $response['next_cursor'] = $sales->nextCursor()?->encode();
-                $response['prev_cursor'] = $sales->previousCursor()?->encode();
-                $response['has_more'] = $sales->hasMorePages();
+
+            if ($useCursor) {
+                $response['next_cursor'] = $transactions->next_cursor;
+                $response['prev_cursor'] = $transactions->prev_cursor;
+                $response['has_more'] = $transactions->has_more;
             } else {
                 $response['pagination'] = [
-                    'current_page' => $sales->currentPage(),
-                    'last_page' => $sales->lastPage(),
-                    'per_page' => $sales->perPage(),
-                    'total' => $sales->total(),
+                    'current_page' => $transactions->current_page,
+                    'last_page' => $transactions->last_page,
+                    'per_page' => $transactions->per_page,
+                    'total' => $transactions->total,
                 ];
             }
+
             return response()->json($response);
         } catch (AuthorizationException $e) {
             return response()->json([
-                'message' => 'Unauthorized to view sales history',
+                'message' => 'No autorizado para ver el historial de ventas',
                 'error' => $e->getMessage(),
             ], 403);
         } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Failed to retrieve sales history',
+                'message' => 'Error al recuperar el historial de ventas',
                 'error' => $e->getMessage(),
             ], 500);
         }
