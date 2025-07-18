@@ -64,10 +64,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Sales management routes (multi-tenant)
     Route::controller(SaleController::class)->group(function () {
         Route::post('/sales/store', 'store');                // Register new sale
-        Route::get('/sales', 'history');               // Get sales history with filters
-        Route::get('/sales/{id}', 'show');     // Get specific sale details
-        Route::put('/sales/update/{id}', 'update');        // Update sale
-        Route::delete('/sales/delete/{id}', 'destroy');       // Delete sale
+        Route::get('/sales', 'show');               // Get sales history with filters
+        Route::get('/sales/showById/{transactionId}', 'showById');     // Get specific transaction details
+        Route::put('/sales/update/{transactionId}', 'update');        // Update sale in transaction
+        Route::delete('/sales/destroy/{transactionId}', 'destroy');       // Delete entire transaction
     });
 });
 

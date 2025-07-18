@@ -55,4 +55,12 @@ class SalePolicy
     {
         return $user->id === $sale->user_id;
     }
+
+    /**
+     * Determina si el usuario puede actualizar la venta.
+     */
+    public function update(User $user, Sale $sale): bool
+    {
+        return $user->id === $sale->user_id;
+    }
 } 

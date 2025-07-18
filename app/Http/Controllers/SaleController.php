@@ -146,7 +146,7 @@ class SaleController extends Controller
      * Show sales history for the authenticated user with performance optimizations.
      * Groups sales by transaction_id instead of timestamp grouping.
      */
-    public function history(Request $request): JsonResponse
+    public function show(Request $request): JsonResponse
     {
         $start = microtime(true); // Performance monitoring
         try {
@@ -300,32 +300,39 @@ class SaleController extends Controller
 
     /**
      * Show a complete transaction belonging to the authenticated user.
-     * When given a sale ID, finds the transaction_id and returns all products in that transaction.
+     * Uses transaction_id directly instead of finding it from a sale ID.
      */
-    public function show(Request $request, $id): JsonResponse
+    public function showById(Request $request, $transactionId): JsonResponse
     {
         try {
-            // Find the sale and check if it belongs to the authenticated user
-            $sale = Sale::forUser($request->user()->id)
+            // Verificar que la transacción pertenece al usuario autenticado
+            $firstSale = Sale::forUser($request->user()->id)
                 ->select(['id', 'user_id', 'transaction_id', 'product_id', 'quantity', 'unit_price', 'total', 'utility', 'created_at', 'updated_at'])
-                ->findOrFail($id);
+                ->where('transaction_id', $transactionId)
+                ->first();
 
-            // Check authorization
-            $this->authorize('view', $sale);
+            if (!$firstSale) {
+                return response()->json([
+                    'message' => 'Transacción no encontrada o no tienes permiso para acceder a ella',
+                ], 404);
+            }
 
-            // Get all sales in the same transaction
+            // Verificar autorización
+            $this->authorize('view', $firstSale);
+
+            // Obtener todas las ventas en la misma transacción
             $transactionSales = Sale::forUser($request->user()->id)
                 ->with(['product:id,name,price,unit_cost', 'user:id,name'])
                 ->select(['id', 'user_id', 'transaction_id', 'product_id', 'quantity', 'unit_price', 'total', 'utility', 'created_at', 'updated_at'])
-                ->where('transaction_id', $sale->transaction_id)
+                ->where('transaction_id', $transactionId)
                 ->get();
 
-            // Calculate transaction totals
+            // Calcular totales de la transacción
             $totalAmount = $transactionSales->sum('total');
             $totalUtility = $transactionSales->sum('utility');
             $totalItems = $transactionSales->sum('quantity');
 
-            // Prepare products list for this transaction
+            // Preparar lista de productos para esta transacción
             $products = $transactionSales->map(function ($sale) {
                 return [
                     'product_name' => $sale->product?->name ?? 'Producto no encontrado',
@@ -339,20 +346,16 @@ class SaleController extends Controller
             return response()->json([
                 'message' => 'Transacción recuperada exitosamente',
                 'transaction' => [
-                    'transaction_id' => $sale->transaction_id,
-                    'transaction_date' => $sale->created_at,
+                    'transaction_id' => $transactionId,
+                    'transaction_date' => $firstSale->created_at,
                     'total_amount' => $totalAmount,
                     'total_utility' => $totalUtility,
                     'total_items' => $totalItems,
                     'products_count' => $transactionSales->count(),
                     'products' => $products,
-                    'user_name' => $sale->user?->name ?? 'Usuario no encontrado',
+                    'user_name' => $firstSale->user?->name ?? 'Usuario no encontrado',
                 ],
             ]);
-        } catch (ModelNotFoundException $e) {
-            return response()->json([
-                'message' => 'Venta no encontrada o no tienes permiso para acceder a ella',
-            ], 404);
         } catch (AuthorizationException $e) {
             return response()->json([
                 'message' => 'No autorizado para ver esta transacción',
@@ -368,32 +371,40 @@ class SaleController extends Controller
 
     /**
      * Delete an entire transaction belonging to the authenticated user.
-     * When given a sale ID, finds the transaction_id and deletes all sales in that transaction.
+     * Uses transaction_id directly instead of finding it from a sale ID.
      */
-    public function destroy(Request $request, $id): JsonResponse
+    public function destroy(Request $request, $transactionId): JsonResponse
     {
         try {
-            // Find the sale and check if it belongs to the authenticated user
-            $sale = Sale::forUser($request->user()->id)->findOrFail($id);
+            // Verificar que la transacción pertenece al usuario autenticado
+            $firstSale = Sale::forUser($request->user()->id)
+                ->where('transaction_id', $transactionId)
+                ->first();
 
-            // Check authorization
-            $this->authorize('delete', $sale);
+            if (!$firstSale) {
+                return response()->json([
+                    'message' => 'Transacción no encontrada o no tienes permiso para acceder a ella',
+                ], 404);
+            }
 
-            // Get all sales in the same transaction for reporting
+            // Verificar autorización
+            $this->authorize('delete', $firstSale);
+
+            // Obtener todas las ventas en la misma transacción para el reporte
             $transactionSales = Sale::forUser($request->user()->id)
                 ->with(['product:id,name'])
-                ->where('transaction_id', $sale->transaction_id)
+                ->where('transaction_id', $transactionId)
                 ->get();
 
             $totalAmount = $transactionSales->sum('total');
             $totalItems = $transactionSales->sum('quantity');
             $productsCount = $transactionSales->count();
 
-            // Delete all sales in the transaction
+            // Eliminar todas las ventas en la transacción
             DB::beginTransaction();
             try {
                 Sale::forUser($request->user()->id)
-                    ->where('transaction_id', $sale->transaction_id)
+                    ->where('transaction_id', $transactionId)
                     ->delete();
                 
                 DB::commit();
@@ -405,17 +416,13 @@ class SaleController extends Controller
             return response()->json([
                 'message' => 'Transacción eliminada exitosamente',
                 'deleted_transaction' => [
-                    'transaction_id' => $sale->transaction_id,
+                    'transaction_id' => $transactionId,
                     'total_amount' => $totalAmount,
                     'total_items' => $totalItems,
                     'products_count' => $productsCount,
                     'deleted_at' => now(),
                 ],
             ]);
-        } catch (ModelNotFoundException $e) {
-            return response()->json([
-                'message' => 'Venta no encontrada o no tienes permiso para acceder a ella',
-            ], 404);
         } catch (AuthorizationException $e) {
             return response()->json([
                 'message' => 'No autorizado para eliminar esta transacción',
@@ -431,27 +438,37 @@ class SaleController extends Controller
 
     /**
      * Update a specific sale within a transaction.
-     * Keeps current functionality but returns complete transaction information after update.
+     * Uses transaction_id and requires product_id to identify which sale to update.
      */
-    public function update(Request $request, $id): JsonResponse
+    public function update(Request $request, $transactionId): JsonResponse
     {
         try {
             // Validar datos de entrada
             $data = $request->validate([
+                'product_id' => 'required|integer|exists:products,id',
                 'quantity' => 'required|integer|min:1',
                 // otros campos que permitas actualizar
             ]);
 
-            // Encontrar la venta del usuario autenticado
-            $sale = Sale::forUser($request->user()->id)->findOrFail($id);
+            // Verificar que la transacción pertenece al usuario autenticado
+            $sale = Sale::forUser($request->user()->id)
+                ->where('transaction_id', $transactionId)
+                ->where('product_id', $data['product_id'])
+                ->first();
+
+            if (!$sale) {
+                return response()->json([
+                    'message' => 'Transacción o producto no encontrado, o no tienes permiso para acceder a ellos',
+                ], 404);
+            }
             
             // Verificar autorización
             $this->authorize('update', $sale);
 
-            // Update the sale
+            // Actualizar la venta
             $sale->update($data);
             
-            // Recalculate totals if needed (quantity changed)
+            // Recalcular totales si es necesario (cantidad cambiada)
             if (isset($data['quantity'])) {
                 $unit_price = $sale->unit_price;
                 $unit_cost = $sale->product->unit_cost ?? 0;
@@ -464,10 +481,10 @@ class SaleController extends Controller
                 ]);
             }
 
-            // Get complete transaction information after update
+            // Obtener información completa de la transacción después de la actualización
             $transactionSales = Sale::forUser($request->user()->id)
                 ->with(['product:id,name,price,unit_cost', 'user:id,name'])
-                ->where('transaction_id', $sale->transaction_id)
+                ->where('transaction_id', $transactionId)
                 ->get();
 
             $totalAmount = $transactionSales->sum('total');
@@ -487,7 +504,7 @@ class SaleController extends Controller
             return response()->json([
                 'message' => 'Venta actualizada exitosamente',
                 'updated_transaction' => [
-                    'transaction_id' => $sale->transaction_id,
+                    'transaction_id' => $transactionId,
                     'transaction_date' => $sale->created_at,
                     'total_amount' => $totalAmount,
                     'total_utility' => $totalUtility,
@@ -498,10 +515,11 @@ class SaleController extends Controller
                 ],
             ]);
             
-        } catch (ModelNotFoundException $e) {
+        } catch (ValidationException $e) {
             return response()->json([
-                'message' => 'Venta no encontrada o no tienes permiso para acceder a ella',
-            ], 404);
+                'message' => 'Error de validación',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (AuthorizationException $e) {
             return response()->json([
                 'message' => 'No autorizado para actualizar esta venta',
