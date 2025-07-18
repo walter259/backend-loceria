@@ -18,8 +18,8 @@ class SaleController extends Controller
     use AuthorizesRequests;
 
     /**
-     * Create a new sale for the authenticated user.
-     * Only allows selling products that belong to the authenticated user.
+     * Create a new sale transaction for the authenticated user.
+     * Generates a unique transaction_id and assigns it to all products in the request.
      */
     public function store(Request $request): JsonResponse
     {
@@ -48,10 +48,17 @@ class SaleController extends Controller
             // Check if all requested products belong to the user
             if ($userProducts->count() !== $productIds->count()) {
                 return response()->json([
-                    'message' => 'Some products do not belong to you or do not exist',
-                    'error' => 'Unauthorized to sell products that do not belong to you',
+                    'message' => 'Algunos productos no te pertenecen o no existen',
+                    'error' => 'No autorizado para vender productos que no te pertenecen',
                 ], 403);
             }
+
+            // Generate unique transaction_id with user_id and timestamp
+            do {
+                $timestamp = (int) (microtime(true) * 1000000);
+                $random = rand(1000, 9999);
+                $transactionId = $timestamp + $random + $user->id;
+            } while (Sale::where('transaction_id', $transactionId)->exists());
 
             $sales = [];
             $total_income = 0;
@@ -64,7 +71,7 @@ class SaleController extends Controller
                     $product = $userProducts->get($item['product_id']);
 
                     if (!$product) {
-                        throw new AuthorizationException('Product not found or does not belong to you');
+                        throw new AuthorizationException('Producto no encontrado o no te pertenece');
                     }
 
                     $quantity = $item['quantity'];
@@ -76,6 +83,7 @@ class SaleController extends Controller
 
                     $sale = Sale::create([
                         'user_id' => $user->id,
+                        'transaction_id' => $transactionId,
                         'product_id' => $product->id,
                         'quantity' => $quantity,
                         'unit_price' => $unit_price,
@@ -95,10 +103,12 @@ class SaleController extends Controller
             }
 
             return response()->json([
-                'message' => 'Sale registered successfully',
+                'message' => 'Transacción registrada exitosamente',
+                'transaction_id' => $transactionId,
                 'sales' => collect($sales)->map(function ($sale) {
                     return [
                         'id' => $sale->id,
+                        'transaction_id' => $sale->transaction_id,
                         'product_id' => $sale->product_id,
                         'quantity' => $sale->quantity,
                         'unit_price' => $sale->unit_price,
@@ -116,17 +126,17 @@ class SaleController extends Controller
             ], 201);
         } catch (ValidationException $e) {
             return response()->json([
-                'message' => 'Validation failed',
+                'message' => 'Error de validación',
                 'errors' => $e->errors(),
             ], 422);
         } catch (AuthorizationException $e) {
             return response()->json([
-                'message' => 'Unauthorized to create this sale',
+                'message' => 'No autorizado para crear esta venta',
                 'error' => $e->getMessage(),
             ], 403);
         } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Failed to register sale',
+                'message' => 'Error al registrar la transacción',
                 'error' => $e->getMessage(),
             ], 500);
         }
@@ -134,7 +144,7 @@ class SaleController extends Controller
 
     /**
      * Show sales history for the authenticated user with performance optimizations.
-     * Groups sales by transaction instead of showing individual product sales.
+     * Groups sales by transaction_id instead of timestamp grouping.
      */
     public function history(Request $request): JsonResponse
     {
@@ -155,9 +165,9 @@ class SaleController extends Controller
             $ttl = 60; // seconds
 
             $transactions = cache()->remember($cacheKey, $ttl, function () use ($userId, $startDate, $endDate, $productId, $perPage, $cursor, $useCursor, $request) {
-                // First, get all sales with their relationships
+                // Get all sales with their relationships
                 $query = Sale::query()
-                    ->select(['id', 'user_id', 'product_id', 'quantity', 'unit_price', 'total', 'utility', 'created_at', 'updated_at'])
+                    ->select(['id', 'user_id', 'transaction_id', 'product_id', 'quantity', 'unit_price', 'total', 'utility', 'created_at', 'updated_at'])
                     ->with(['product:id,name,price,unit_cost', 'user:id,name'])
                     ->where('user_id', $userId)
                     ->orderByDesc('created_at');
@@ -178,14 +188,11 @@ class SaleController extends Controller
                 // Get all sales for grouping
                 $allSales = $query->get();
 
-                // Group sales by transaction (same user_id and created_at timestamp)
-                $groupedSales = $allSales->groupBy(function ($sale) {
-                    // Group by user_id and created_at (rounded to seconds for transaction grouping)
-                    return $sale->user_id . '_' . $sale->created_at->format('Y-m-d H:i:s');
-                });
+                // Group sales by transaction_id (much more efficient than timestamp grouping)
+                $groupedSales = $allSales->groupBy('transaction_id');
 
                 // Transform grouped sales into transactions
-                $transactions = $groupedSales->map(function ($sales, $groupKey) {
+                $transactions = $groupedSales->map(function ($sales, $transactionId) {
                     $firstSale = $sales->first();
                     
                     // Calculate transaction totals
@@ -205,7 +212,7 @@ class SaleController extends Controller
                     })->values();
 
                     return [
-                        'transaction_id' => $firstSale->id, // Use first sale ID as transaction ID
+                        'transaction_id' => $transactionId,
                         'transaction_date' => $firstSale->created_at,
                         'total_amount' => $totalAmount,
                         'total_utility' => $totalUtility,
@@ -292,53 +299,76 @@ class SaleController extends Controller
     }
 
     /**
-     * Show a specific sale belonging to the authenticated user.
+     * Show a complete transaction belonging to the authenticated user.
+     * When given a sale ID, finds the transaction_id and returns all products in that transaction.
      */
     public function show(Request $request, $id): JsonResponse
     {
         try {
             // Find the sale and check if it belongs to the authenticated user
             $sale = Sale::forUser($request->user()->id)
-                ->with(['product:id,name,price,unit_cost', 'user:id,name'])
-                ->select(['id', 'user_id', 'product_id', 'quantity', 'unit_price', 'total', 'utility', 'created_at', 'updated_at'])
+                ->select(['id', 'user_id', 'transaction_id', 'product_id', 'quantity', 'unit_price', 'total', 'utility', 'created_at', 'updated_at'])
                 ->findOrFail($id);
 
             // Check authorization
             $this->authorize('view', $sale);
 
-            return response()->json([
-                'message' => 'Sale retrieved successfully',
-                'sale' => [
-                    'id' => $sale->id,
-                    'user' => $sale->user?->name,
-                    'product' => $sale->product?->name,
+            // Get all sales in the same transaction
+            $transactionSales = Sale::forUser($request->user()->id)
+                ->with(['product:id,name,price,unit_cost', 'user:id,name'])
+                ->select(['id', 'user_id', 'transaction_id', 'product_id', 'quantity', 'unit_price', 'total', 'utility', 'created_at', 'updated_at'])
+                ->where('transaction_id', $sale->transaction_id)
+                ->get();
+
+            // Calculate transaction totals
+            $totalAmount = $transactionSales->sum('total');
+            $totalUtility = $transactionSales->sum('utility');
+            $totalItems = $transactionSales->sum('quantity');
+
+            // Prepare products list for this transaction
+            $products = $transactionSales->map(function ($sale) {
+                return [
+                    'product_name' => $sale->product?->name ?? 'Producto no encontrado',
                     'quantity' => $sale->quantity,
                     'unit_price' => $sale->unit_price,
                     'total' => $sale->total,
                     'utility' => $sale->utility,
-                    'created_at' => $sale->created_at,
-                    'updated_at' => $sale->updated_at,
+                ];
+            })->values();
+
+            return response()->json([
+                'message' => 'Transacción recuperada exitosamente',
+                'transaction' => [
+                    'transaction_id' => $sale->transaction_id,
+                    'transaction_date' => $sale->created_at,
+                    'total_amount' => $totalAmount,
+                    'total_utility' => $totalUtility,
+                    'total_items' => $totalItems,
+                    'products_count' => $transactionSales->count(),
+                    'products' => $products,
+                    'user_name' => $sale->user?->name ?? 'Usuario no encontrado',
                 ],
             ]);
         } catch (ModelNotFoundException $e) {
             return response()->json([
-                'message' => 'Sale not found or you do not have permission to access it',
+                'message' => 'Venta no encontrada o no tienes permiso para acceder a ella',
             ], 404);
         } catch (AuthorizationException $e) {
             return response()->json([
-                'message' => 'Unauthorized to view this sale',
+                'message' => 'No autorizado para ver esta transacción',
                 'error' => $e->getMessage(),
             ], 403);
         } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Failed to retrieve sale',
+                'message' => 'Error al recuperar la transacción',
                 'error' => $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Delete a sale belonging to the authenticated user.
+     * Delete an entire transaction belonging to the authenticated user.
+     * When given a sale ID, finds the transaction_id and deletes all sales in that transaction.
      */
     public function destroy(Request $request, $id): JsonResponse
     {
@@ -349,66 +379,139 @@ class SaleController extends Controller
             // Check authorization
             $this->authorize('delete', $sale);
 
-            // Delete the sale
-            $sale->delete();
+            // Get all sales in the same transaction for reporting
+            $transactionSales = Sale::forUser($request->user()->id)
+                ->with(['product:id,name'])
+                ->where('transaction_id', $sale->transaction_id)
+                ->get();
+
+            $totalAmount = $transactionSales->sum('total');
+            $totalItems = $transactionSales->sum('quantity');
+            $productsCount = $transactionSales->count();
+
+            // Delete all sales in the transaction
+            DB::beginTransaction();
+            try {
+                Sale::forUser($request->user()->id)
+                    ->where('transaction_id', $sale->transaction_id)
+                    ->delete();
+                
+                DB::commit();
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
 
             return response()->json([
-                'message' => 'Sale deleted successfully',
+                'message' => 'Transacción eliminada exitosamente',
+                'deleted_transaction' => [
+                    'transaction_id' => $sale->transaction_id,
+                    'total_amount' => $totalAmount,
+                    'total_items' => $totalItems,
+                    'products_count' => $productsCount,
+                    'deleted_at' => now(),
+                ],
             ]);
         } catch (ModelNotFoundException $e) {
             return response()->json([
-                'message' => 'Sale not found or you do not have permission to access it',
+                'message' => 'Venta no encontrada o no tienes permiso para acceder a ella',
             ], 404);
         } catch (AuthorizationException $e) {
             return response()->json([
-                'message' => 'Unauthorized to delete this sale',
+                'message' => 'No autorizado para eliminar esta transacción',
                 'error' => $e->getMessage(),
             ], 403);
         } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Failed to delete sale',
+                'message' => 'Error al eliminar la transacción',
                 'error' => $e->getMessage(),
             ], 500);
         }
     }
 
+    /**
+     * Update a specific sale within a transaction.
+     * Keeps current functionality but returns complete transaction information after update.
+     */
     public function update(Request $request, $id): JsonResponse
-{
-    try {
-        // Validar datos de entrada
-        $data = $request->validate([
-            'quantity' => 'required|integer|min:1',
-            // otros campos que permitas actualizar
-        ]);
+    {
+        try {
+            // Validar datos de entrada
+            $data = $request->validate([
+                'quantity' => 'required|integer|min:1',
+                // otros campos que permitas actualizar
+            ]);
 
-        // Encontrar la venta del usuario autenticado
-        $sale = Sale::forUser($request->user()->id)->findOrFail($id);
-        
-        // Verificar autorización
-        $this->authorize('update', $sale);
+            // Encontrar la venta del usuario autenticado
+            $sale = Sale::forUser($request->user()->id)->findOrFail($id);
+            
+            // Verificar autorización
+            $this->authorize('update', $sale);
 
-        // Actualizar la venta
-        $sale->update($data);
-        
-        return response()->json([
-            'message' => 'Sale updated successfully',
-            'sale' => $sale
-        ]);
-        
-    } catch (ModelNotFoundException $e) {
-        return response()->json([
-            'message' => 'Sale not found or you do not have permission to access it',
-        ], 404);
-    } catch (AuthorizationException $e) {
-        return response()->json([
-            'message' => 'Unauthorized to update this sale',
-            'error' => $e->getMessage(),
-        ], 403);
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Failed to update sale',
-            'error' => $e->getMessage(),
-        ], 500);
+            // Update the sale
+            $sale->update($data);
+            
+            // Recalculate totals if needed (quantity changed)
+            if (isset($data['quantity'])) {
+                $unit_price = $sale->unit_price;
+                $unit_cost = $sale->product->unit_cost ?? 0;
+                $new_total = $unit_price * $data['quantity'];
+                $new_utility = $new_total - ($unit_cost * $data['quantity']);
+                
+                $sale->update([
+                    'total' => $new_total,
+                    'utility' => $new_utility,
+                ]);
+            }
+
+            // Get complete transaction information after update
+            $transactionSales = Sale::forUser($request->user()->id)
+                ->with(['product:id,name,price,unit_cost', 'user:id,name'])
+                ->where('transaction_id', $sale->transaction_id)
+                ->get();
+
+            $totalAmount = $transactionSales->sum('total');
+            $totalUtility = $transactionSales->sum('utility');
+            $totalItems = $transactionSales->sum('quantity');
+
+            $products = $transactionSales->map(function ($sale) {
+                return [
+                    'product_name' => $sale->product?->name ?? 'Producto no encontrado',
+                    'quantity' => $sale->quantity,
+                    'unit_price' => $sale->unit_price,
+                    'total' => $sale->total,
+                    'utility' => $sale->utility,
+                ];
+            })->values();
+
+            return response()->json([
+                'message' => 'Venta actualizada exitosamente',
+                'updated_transaction' => [
+                    'transaction_id' => $sale->transaction_id,
+                    'transaction_date' => $sale->created_at,
+                    'total_amount' => $totalAmount,
+                    'total_utility' => $totalUtility,
+                    'total_items' => $totalItems,
+                    'products_count' => $transactionSales->count(),
+                    'products' => $products,
+                    'user_name' => $sale->user?->name ?? 'Usuario no encontrado',
+                ],
+            ]);
+            
+        } catch (ModelNotFoundException $e) {
+            return response()->json([
+                'message' => 'Venta no encontrada o no tienes permiso para acceder a ella',
+            ], 404);
+        } catch (AuthorizationException $e) {
+            return response()->json([
+                'message' => 'No autorizado para actualizar esta venta',
+                'error' => $e->getMessage(),
+            ], 403);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error al actualizar la venta',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
-}
 }
